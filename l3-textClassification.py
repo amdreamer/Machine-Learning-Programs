@@ -330,54 +330,6 @@ model = model.to(device)
 crit = crit.to(device)
 
 
-# put the embedding layer out of the model
-class RNNModel_GRU2(nn.Module):
-    def __init__(self, vocab_size, embedding_size, output_size, pad_idx, hidden_size, dropout):
-        super(RNNModel_GRU, self).__init__()
-        self.embed = nn.Embedding(vocab_size, embedding_size, padding_idx=pad_idx)
-        self.gru = nn.GRU(embedding_size, hidden_size, bidirectional=True, num_layers=1)
-        self.linear = nn.Linear(hidden_size*2, output_size)
-        self.dropout = nn.Dropout(dropout)
-    
-    def forward(self, text):
-        embedded = self.embed(text) # [seq_len, batch_size, embedding_size]
-        embedded  = self.dropout(embedded)
-        output, hidden = self.gru(embedded)
-        
-        # hidden: 2 * batch_size * hidden_size
-        hidden = torch.cat([hidden[0], hidden[1]], dim=1)
-        hidden = self.dropout(hidden.squeeze())
-        return self.linear(hidden)
-
-# define the hyper-parameters
-VOCAB_SIZE = len(TEXT.vocab)
-EMBEDDING_SIZE = 100
-OUTPUT_SIZE = 1
-PAD_IDX = TEXT.vocab.stoi[TEXT.pad_token]
-
-model = RNNModel_GRU(vocab_size=VOCAB_SIZE, 
-                 embedding_size=EMBEDDING_SIZE, 
-                 output_size=OUTPUT_SIZE, 
-                 pad_idx=PAD_IDX, 
-                 hidden_size=100, 
-                 dropout=0.3)
-
-
-pretrained_embedding = TEXT.vocab.vectors
-model.embed.weight.data.copy_(pretrained_embedding)
-
-UNK_IDX = TEXT.vocab.stoi[TEXT.unk_token]
-model.embed.weight.data[PAD_IDX] = torch.zeros(EMBEDDING_SIZE)
-model.embed.weight.data[UNK_IDX] = torch.zeros(EMBEDDING_SIZE)
-
-embed = nn.Embedding(VOCAB_SIZE, EMBEDDING_SIZE, padding_idx=PAD_IDX)
-embedded = embed(text)
-
-optimizer = torch.optim.Adam(model.parameters())
-crit = nn.BCEWithLogitsLoss()
-
-model = model.to(device)
-crit = crit.to(device)
 
 
 N_EPOCHS = 10
@@ -429,56 +381,6 @@ for state in optimizer.state.values():
 		if isinstance(v, torch.Tensor):
 			state[k] = v.to(device)
 
+# for model performance and plotting.
 loss,accuracy,Sensitivity,Specificity,MCC,F1 = PlotAUC(model, test_iterator, "IMDB_GRU-model-state-retainGraph")
-
-import spacy
-nlp = spacy.load("en")
-
-# example 
-predict_sentiment(u"This film is horrible!")
-predict_sentiment(u"This film is terrific!")
-
-# use backward step get the autograd derivative
-def pre_process(sentence):
-	tokenized = [tok.text for tok in nlp.tokenizer(sentence)]
-	indexed = [TEXT.vocab.stoi[t] for t in tokenized]
-	tensor = torch.tensor(indexed,dtype=torch.float).to(device) # Use float type to allow gradient
-	tensor = tensor.unsqueeze(1)
-	tensor.requires_grad_()
-	return tensor # return a tensor with gradient avaliable
-
-
-input_1 = u"This film is horrible!"
-preprocess_1 = pre_process(input_1) # requires_grad = True
-
-model.eval()
-
-scores = model(preprocess_1)
-
-input_1,output_1 = get_prediction(u"We thought this movie is wonderful")
-input_1 = input_1.float()
-input_1.requires_grad=True
-y = torch.tensor([0.]).to(device)
-y = torch.tensor([1.],requires_grad=True).to(device)
-
-torch.autograd.grad(output_1, input_1, retain_graph=True,allow_unused=True) #(None,)
-torch.autograd.grad(output_1, y, retain_graph=True,allow_unused=True) #(none,)
-
-model.eval()
-loss = crit(torch.sigmoid(output_1),y).to(device)
-df_do = loss.backward()
-
-torch.autograd.grad(output_1, input_1)
-
-
-df_do = torch.autograd.backward(loss, )
-inputGrads = model:backward(X, df_do)
-
-df_do = crit:backward(output, y)
-inputGrads = model:backward(X, df_do)
-inputGrads = torch.abs(inputGrads)
-inputGrads = torch.cmul(inputGrads,X)
--- inputGrads = inputGrads:max(2)
-inputGrads = inputGrads:view(opt.seq_length,4)
-score = output[1]:exp()[1]
 
