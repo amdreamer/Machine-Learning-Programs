@@ -266,14 +266,17 @@ def pre_process(sentence):
     indexed = [TEXT.vocab.stoi[t] for t in tokenized]
     tensor = torch.LongTensor(indexed).to(device) # seq_len long tensor is important
     tensor = tensor.unsqueeze(1) # seq_len * batch_size(1)
-    embedded = torch.tensor(embed(tensor),requires_grad=False)
-    # pred = torch.sigmoid(model(embedded))
+    embedded = torch.tensor(embed(tensor),requires_grad=True) 
+# here we need to get gradient for saliency computation, use requires_grad=True   
     return embedded
+
 # deal with input sentence
 input_1 = u"This film is horrible!"
+input_1 = u"This movie was sadly under-promoted but proved to be truly exceptional."
 preprocess_1 = pre_process(input_1) # requires_grad = True
 # we would run the model in evaluation mode
-model.eval()  
+
+model.train() 
 # if I set model.eval(), an error occur: RuntimeError: cudnn RNN backward can only be called in training mode
 
 '''forward pass through the model to get the scores, note that RNNModel_GRU2 model doesn't perform sigmoid at the end
@@ -286,11 +289,10 @@ score_max with respect to nodes in the computation graph
 '''
 scores.backward()
 '''
-Saliency would be the gradient with respect to the input image now. But note that the input image has 3 channels,
-R, G and B. To derive a single class saliency value for each pixel (i, j),  we take the maximum magnitude
-across all colour channels.
+Saliency would be the gradient with respect to the input now. 
+But note that the input has 100 dim embdeddings. 
+To derive a single class saliency value for each word (i, j),  
+we take the maximum magnitude across all embedding dimensions.
 '''
-saliency, _ = torch.max(preprocess_1.grad.data.abs(),dim=1) # AttributeError: 'NoneType' object has no attribute 'data'
-
-
-
+saliency, _ = torch.max(preprocess_1.grad.data.abs(),dim=2) 
+# preprocess_1.grad.size() [5, 1, 100]
