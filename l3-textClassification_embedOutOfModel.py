@@ -102,7 +102,7 @@ embed.weight.data.copy_(pretrained_embedding)
 UNK_IDX = TEXT.vocab.stoi[TEXT.unk_token]
 embed.weight.data[PAD_IDX] = torch.zeros(EMBEDDING_SIZE)
 embed.weight.data[UNK_IDX] = torch.zeros(EMBEDDING_SIZE)
-embedded = torch.tensor(embed(text),requires_grad=False)
+# embedded = torch.tensor(embed(text),requires_grad=False)
 
 # set optimizer and criteria
 optimizer = torch.optim.Adam(model.parameters())
@@ -266,19 +266,18 @@ def pre_process(sentence):
     indexed = [TEXT.vocab.stoi[t] for t in tokenized]
     tensor = torch.LongTensor(indexed).to(device) # seq_len long tensor is important
     tensor = tensor.unsqueeze(1) # seq_len * batch_size(1)
-    embedded = torch.tensor(embed(tensor),requires_grad=True) 
-# here we need to get gradient for saliency computation, use requires_grad=True   
+    embedded = torch.tensor(embed(tensor),requires_grad=True) # here we need to get gradient for saliency computation, use requires_grad=True
+    # pred = torch.sigmoid(model(embedded))
     return embedded
-
 # deal with input sentence
 input_1 = u"This film is horrible!"
 input_1 = u"This movie was sadly under-promoted but proved to be truly exceptional."
+input_1 = u"The movie is fantastic I really like it."
 preprocess_1 = pre_process(input_1) # requires_grad = True
 # we would run the model in evaluation mode
-
-model.train() 
-# if I set model.eval(), an error occur: RuntimeError: cudnn RNN backward can only be called in training mode
-
+model.train() # if I set model.eval(), an error occur: RuntimeError: cudnn RNN backward can only be called in training mode
+model.dropout.eval() # only freeze the drop out layer and batch normalization layer that will generate randomness to the model.
+#with torch.no_grad():
 '''forward pass through the model to get the scores, note that RNNModel_GRU2 model doesn't perform sigmoid at the end
 and we also don't need sigmoid, we need scores, so that's perfect for us.
 '''
@@ -288,11 +287,39 @@ backward function on score_max performs the backward pass in the computation gra
 score_max with respect to nodes in the computation graph
 '''
 scores.backward()
+
 '''
-Saliency would be the gradient with respect to the input now. 
-But note that the input has 100 dim embdeddings. 
-To derive a single class saliency value for each word (i, j),  
-we take the maximum magnitude across all embedding dimensions.
+Saliency would be the gradient with respect to the input image now. But note that the input image has 3 channels,
+R, G and B. To derive a single class saliency value for each pixel (i, j),  we take the maximum magnitude
+across all colour channels.
 '''
-saliency, _ = torch.max(preprocess_1.grad.data.abs(),dim=2) 
-# preprocess_1.grad.size() [5, 1, 100]
+# saliency, _ = torch.max(preprocess_1.grad.data.abs(),dim=2) # Use the max from all dimension
+saliency = preprocess_1.grad.data.abs().squeeze() # we can use the whole dimension of Saliency to present [len_sentence, 100]
+saliency_list = saliency.detach().cpu().numpy() # for Saliency plot numpy.ndarray [len_sentence, 100]
+
+ # [This, film, is, horrible, !]
+torch.sigmoid(scores) # [0.0065], shows the classification of prediction
+
+# plotting the Saliency heatmap
+#plt.figure(figsize=(8, 5))
+# generate words list from the whole sentence
+words = [tok for tok in nlp.tokenizer(input_1)]
+# create the figure
+fig = plt.figure(figsize=(10, 5))
+# set the sub-figure
+ax = fig.add_subplot(111)
+ax.set_aspect(aspect=2)
+im = plt.imshow(saliency_list, aspect='auto',interpolation='nearest', cmap=plt.cm.Blues)
+# Create colorbar
+cbar = ax.figure.colorbar(im, ax=ax)
+cbar.ax.set_ylabel("Saliency", rotation=-90, va="bottom")
+# set ticks for axis
+ax.set_yticks(np.arange(len(words)))
+ax.set_xticks(np.arange(len(saliency_list[0]),step = 20))
+ax.set_yticklabels(words)
+ax.set_title("Saliency heatmap for the emotion prediction")
+#ax.colorbar()
+plt.savefig( 'SaliencyHeatmap_'+input_1+'.pdf', format='pdf')
+
+
+
